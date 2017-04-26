@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans:beans xmlns="http://www.springframework.org/schema/security" xmlns:beans="http://www.springframework.org/schema/beans"
+  xmlns:p="http://www.springframework.org/schema/p" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+        http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd">
+  <http entry-point-ref="casEntryPoint" use-expressions="true" access-decision-manager-ref="iamAccessDecisionManager">
+    <intercept-url pattern="/**" access="hasRole('ROLE_USER')" />
+    <custom-filter ref="requestSingleLogoutFilter" before="LOGOUT_FILTER" />
+    <custom-filter ref="singleLogoutFilter" before="CAS_FILTER" />
+    <custom-filter ref="casFilter" position="CAS_FILTER" />
+  </http>
+  <beans:bean id="iamAccessDecisionManager" class="org.springframework.security.access.vote.AffirmativeBased">
+    <beans:constructor-arg index="0" name="decisionVoters">
+      <beans:list>
+        <beans:ref bean="fortressDecisionVoter" />
+      </beans:list>
+    </beans:constructor-arg>
+  </beans:bean>
+  <beans:bean id="fortressDecisionVoter" class="com.gdn.iam.spring.security.FortressDecisionVoter">
+    <beans:property name="accessManager" ref="accessManager" />
+    <beans:property name="applicationBasePath" value="${application.base.path.location}" />
+    <beans:property name="rbacContextId" value="${rbac.context.id}" />
+    <beans:property name="sessionCacheDuration" value="5" />
+  </beans:bean>
+  <!-- authentication manager -->
+  <authentication-manager alias="authManager">
+    <authentication-provider ref="casAuthProvider" />
+  </authentication-manager>
+  <!-- This filter handles a Single Logout Request from the CAS Server -->
+  <beans:bean id="singleLogoutFilter" class="org.jasig.cas.client.session.SingleSignOutFilter">
+    <beans:property name="casServerUrlPrefix" value="${cas.server.authentication.host}" />
+    <beans:property name="logoutParameterName" value="logoutRequest" />
+  </beans:bean>
+  <beans:bean id="serviceProperties" class="org.springframework.security.cas.ServiceProperties" 
+    p:service="${cas.service.host}/j_spring_cas_security_check"
+    p:authenticateAllArtifacts="true" />
+  <beans:bean id="casEntryPoint" class="org.springframework.security.cas.web.CasAuthenticationEntryPoint"
+    p:serviceProperties-ref="serviceProperties" p:loginUrl="${cas.server.authentication.host}/login" />
+  <beans:bean id="casFilter" class="org.springframework.security.cas.web.CasAuthenticationFilter"
+    p:authenticationManager-ref="authManager" p:serviceProperties-ref="serviceProperties">
+    <beans:property name="authenticationDetailsSource">
+      <beans:bean class="org.springframework.security.cas.web.authentication.ServiceAuthenticationDetailsSource" />
+    </beans:property>
+    <beans:property name="authenticationFailureHandler">
+      <beans:bean class="org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler"
+        p:defaultFailureUrl="/casfailed.jsp" />
+    </beans:property>
+  </beans:bean>
+  <beans:bean id="pgtStorage" class="org.jasig.cas.client.proxy.ProxyGrantingTicketStorageImpl" />
+  <beans:bean id="casAuthProvider" class="com.gdn.iam.spring.security.GdnCasAuthenticationProvider"
+    p:serviceProperties-ref="serviceProperties" p:key="casAuthProviderKey">
+    <beans:property name="authenticationUserDetailsService">
+      <beans:bean class="com.gdn.iam.spring.security.IamUserDetails">
+        <beans:constructor-arg>
+          <beans:list>
+            <beans:value>iamSession</beans:value>
+          </beans:list>
+        </beans:constructor-arg>
+      </beans:bean>
+    </beans:property>
+    <beans:property name="ticketValidator">
+      <beans:bean class="org.jasig.cas.client.validation.Cas20ServiceTicketValidator">
+        <beans:constructor-arg index="0" value="${cas.server.authorization.host}" />
+      </beans:bean>
+    </beans:property>
+    <beans:property name="sleepForDistributeTicketTime" value="350" />
+  </beans:bean>
+  <beans:bean id="requestSingleLogoutFilter" class="org.springframework.security.web.authentication.logout.LogoutFilter">
+    <beans:constructor-arg index="0"
+      value="${cas.server.authentication.host}/logout?service=${application.base.path.location}" />
+    <beans:constructor-arg index="1">
+      <beans:bean class="org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler" />
+    </beans:constructor-arg>
+    <beans:property name="filterProcessesUrl" value="/j_spring_cas_security_logout" />
+  </beans:bean>
+  <beans:bean id="accessManager" class="org.apache.directory.fortress.core.rest.AccessMgrRestImpl">
+    <beans:property name="contextId" value="${rbac.context.id}" />
+  </beans:bean>
+</beans:beans>
